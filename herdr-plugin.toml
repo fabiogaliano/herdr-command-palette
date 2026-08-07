@@ -1,0 +1,14 @@
+id = "palette"
+name = "Command Palette"
+version = "0.1.0"
+min_herdr_version = "0.7.5"
+description = "Fuzzy palette over every Herdr action, showing the shortcut beside each one."
+platforms = ["macos", "linux"]
+
+[[panes]]
+id = "palette"
+title = "Command Palette"
+command = ["./bin/herdr-palette"]
+placement = "popup"
+width = "70%"
+height = "60%"

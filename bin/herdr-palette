@@ -1,0 +1,11 @@
+#!/bin/zsh -f
+# Shell trampoline, ~6ms from pane spawn to here. It exists to pin how the
+# interpreter starts: -S skips site/sitecustomize processing (the palette is
+# pure stdlib) and -E ignores PYTHON* env, which together cut a chunk off the
+# ~115ms interpreter start that dominates time-to-first-paint.
+if [[ -n $HERDR_PALETTE_TRACE ]]; then
+  zmodload zsh/datetime
+  export HERDR_PALETTE_T0=$EPOCHREALTIME
+  print -r -- "$EPOCHREALTIME  trampoline exec" >> $HERDR_PALETTE_TRACE
+fi
+exec python3 -S -E "${0:A:h}/palette.py" "$@"
