@@ -59,11 +59,13 @@ def trace(label: str) -> None:
 CONFIG = os.path.expanduser("~/.config/herdr/config.toml")
 
 RESET = "\x1b[0m"
+# Defaults; overridden in main() from [theme.custom] when available.
 DIM = "\x1b[2m"
 KEY = "\x1b[35m"
 CAT = "\x1b[36m"
 
 # Glyph and colour per agent_status, so a blocked agent is findable at a glance.
+# Mutable: main() merges user overrides from [glyphs] in plugin config.
 AGENT_STATUS = {
     "working": ("●", "\x1b[33m"),
     "done": ("✓", "\x1b[32m"),
@@ -71,6 +73,113 @@ AGENT_STATUS = {
     "blocked": ("▲", "\x1b[31m"),
 }
 AGENT_STATUS_UNKNOWN = ("·", DIM)
+
+DEFAULT_GLYPHS = {
+    "working": "●",
+    "done": "✓",
+    "idle": "◌",
+    "blocked": "▲",
+    "unknown": "·",
+}
+
+
+def hex_to_ansi(hex_color: str) -> str:
+    """Convert #rrggbb to a 24-bit ANSI foreground sequence."""
+    hex_color = hex_color.lstrip("#")
+    if len(hex_color) != 6:
+        return ""
+    try:
+        r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+    except ValueError:
+        return ""
+    return f"\x1b[38;2;{r};{g};{b}m"
+
+
+def load_plugin_config() -> dict:
+    """Read the plugin's own config from HERDR_PLUGIN_CONFIG_DIR/config.toml."""
+    config_dir = os.environ.get("HERDR_PLUGIN_CONFIG_DIR")
+    if not config_dir:
+        return {}
+    path = os.path.join(config_dir, "config.toml")
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        return _parse_plugin_config_fallback(path)
+    try:
+        with open(path, "rb") as fh:
+            return tomllib.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def _parse_plugin_config_fallback(path: str) -> dict:
+    """Minimal reader for plugin config on Python < 3.11."""
+    result: dict[str, object] = {}
+    section: str | None = None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            lines = fh.readlines()
+    except OSError:
+        return {}
+    for line in lines:
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        if line.startswith("["):
+            section = line.strip("[]").strip()
+            if section not in result:
+                result[section] = {}
+            continue
+        if "=" not in line:
+            continue
+        name, _, raw = line.partition("=")
+        name = name.strip()
+        raw = raw.strip()
+        if raw.startswith("["):
+            values = re.findall(r'"([^"]*)"', raw)
+            value: object = values
+        elif raw.startswith('"'):
+            value = raw.strip('"')
+        elif raw.lower() in ("true", "false"):
+            value = raw.lower() == "true"
+        else:
+            value = raw
+        if section:
+            result.setdefault(section, {})[name] = value  # type: ignore[union-attr]
+        else:
+            result[name] = value
+    return result
+
+
+def apply_theme_colors(herdr_config: dict) -> None:
+    """Override KEY/CAT/DIM from [theme.custom] so row text matches the theme."""
+    global KEY, CAT, DIM
+    custom = (herdr_config.get("theme") or {}).get("custom") or {}
+    accent = custom.get("accent")
+    if accent:
+        KEY = hex_to_ansi(accent) or KEY
+    overlay = custom.get("overlay0")
+    if overlay:
+        CAT = hex_to_ansi(overlay) or CAT
+    subtext = custom.get("subtext0")
+    if subtext:
+        DIM = hex_to_ansi(subtext) or DIM
+
+
+def apply_glyph_config(plugin_config: dict) -> None:
+    """Merge user glyph overrides into AGENT_STATUS."""
+    glyphs = plugin_config.get("glyphs")
+    if not glyphs or not isinstance(glyphs, dict):
+        return
+    global AGENT_STATUS, AGENT_STATUS_UNKNOWN
+    for status in ("working", "done", "idle", "blocked"):
+        glyph = glyphs.get(status)
+        if glyph and status in AGENT_STATUS:
+            _, color = AGENT_STATUS[status]
+            AGENT_STATUS[status] = (glyph, color)
+    unknown_glyph = glyphs.get("unknown")
+    if unknown_glyph:
+        AGENT_STATUS_UNKNOWN = (unknown_glyph, AGENT_STATUS_UNKNOWN[1])
 
 # Sorted by how much the agent wants from you: blocked is waiting on an answer,
 # working may block soon, done is finished, idle wants nothing.
@@ -267,11 +376,7 @@ def parse_keys_fallback() -> dict:
     return {"keys": keys}
 
 
-# The prefix is a leader, not a held modifier, so it gets its own mark rather
-# than being spelled out as the chord you configured it to.
-LEADER = "✦"
-
-MOD_SYMBOLS = {
+SYMBOL_MODS = {
     "ctrl": "^",
     "control": "^",
     "alt": "⌥",
@@ -282,6 +387,21 @@ MOD_SYMBOLS = {
     "super": "⌘",
     "meta": "⌘",
 }
+TEXT_MODS = {
+    "ctrl": "Ctrl+",
+    "control": "Ctrl+",
+    "alt": "Alt+",
+    "opt": "Alt+",
+    "option": "Alt+",
+    "shift": "Shift+",
+    "cmd": "Cmd+",
+    "super": "Super+",
+    "meta": "Meta+",
+}
+
+# Set in main() based on plugin config / platform detection.
+MOD_SYMBOLS = SYMBOL_MODS
+
 NAMED_KEYS = {
     "semicolon": ";",
     "comma": ",",
@@ -294,6 +414,17 @@ NAMED_KEYS = {
     "backtick": "`",
     "equal": "=",
 }
+
+
+def resolve_modifier_style(plugin_config: dict) -> dict:
+    """Pick symbol or text modifier glyphs from config, falling back to platform."""
+    style = plugin_config.get("modifier_style", "")
+    if style == "text":
+        return TEXT_MODS
+    if style == "symbol":
+        return SYMBOL_MODS
+    # Auto-detect: macOS uses symbols, everything else uses text.
+    return SYMBOL_MODS if sys.platform == "darwin" else TEXT_MODS
 
 
 def render_chord(chord: str) -> str:
@@ -318,11 +449,13 @@ def render_chord(chord: str) -> str:
 
 
 class Keymap:
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict, leader: str = "") -> None:
         keys = config.get("keys", {}) or {}
         self.raw = {**DEFAULT_KEYS, **{k: v for k, v in keys.items() if isinstance(v, (str, list))}}
         prefix = self.raw.get("prefix", "ctrl+b")
         self.prefix = render_chord(prefix if isinstance(prefix, str) else prefix[0])
+        # Empty string = use the rendered prefix chord; any other value = use it.
+        self.leader = leader if leader else self.prefix
 
     def chord(self, name: str | None) -> str:
         if not name:
@@ -336,9 +469,9 @@ class Keymap:
 
     def render(self, value: str) -> str:
         if value.startswith("prefix+"):
-            return f"{LEADER} {render_chord(value[len('prefix+'):])}"
+            return f"{self.leader} {render_chord(value[len('prefix+'):])}"
         if value == "prefix":
-            return LEADER
+            return self.leader
         return render_chord(value)
 
 
@@ -410,7 +543,7 @@ def encode_rows(rows: list[tuple[str, str]]) -> str:
 def run_fzf(
     rows: list[tuple[str, str]],
     header: str,
-    specs: list[dict] | None = None,
+    specs: dict | list | None = None,
 ) -> str | None:
     payload = encode_rows(rows)
     swap: list[str] = []
@@ -418,11 +551,11 @@ def run_fzf(
     # Herdr gives the plugin a state dir; using it (rather than tempfile) keeps
     # one more module out of startup, and the pid keeps concurrent popups apart.
     state = os.environ.get("HERDR_PLUGIN_STATE_DIR") or "/tmp"
-    cache = os.path.join(state, f"specs-{os.getpid()}.json") if specs else None
-    if cache:
-        with open(cache, "w", encoding="utf-8") as fh:
+    cache_path = os.path.join(state, f"specs-{os.getpid()}.json") if specs else None
+    if cache_path:
+        with open(cache_path, "w", encoding="utf-8") as fh:
             json.dump(specs, fh)
-        env["HERDR_PALETTE_SPECS"] = cache
+        env["HERDR_PALETTE_SPECS"] = cache_path
         # fzf's own matcher would drop the group headings along with the rows
         # they label, so matching happens here instead and headings are redrawn
         # for whatever survives.
@@ -465,9 +598,9 @@ def run_fzf(
         # A user's FZF_DEFAULT_OPTS (--border, --height 40%) would fight the flags above.
         env=env,
     )
-    if cache:
+    if cache_path:
         try:
-            os.unlink(cache)
+            os.unlink(cache_path)
         except OSError:
             pass
     trace("fzf returned")
@@ -827,7 +960,7 @@ def custom_commands(config: dict, keymap: Keymap) -> list[Action]:
     rows = []
     for index, entry in enumerate(entries):
         command = entry.get("command", "")
-        if not command or "herdr-palette" in command:
+        if not command or "--plugin palette" in command or "--plugin=palette" in command:
             continue
         kind = entry.get("type", "shell")
         title = entry.get("description") or command
@@ -924,11 +1057,30 @@ def emit_rows(query: str) -> int:
         return 1
     try:
         with open(cache, encoding="utf-8") as fh:
-            specs = json.load(fh)
+            data = json.load(fh)
     except (OSError, ValueError):
         return 1
+    # The cache is either a bare list (v0.1) or a dict with colors (v0.2+).
+    if isinstance(data, dict):
+        specs = data.get("specs", [])
+        colors = data.get("colors", {})
+        global KEY, DIM, CAT
+        KEY = colors.get("key", KEY)
+        DIM = colors.get("dim", DIM)
+        CAT = colors.get("cat", CAT)
+    else:
+        specs = data
     print(encode_rows(render_rows(specs, query)))
     return 0
+
+
+GROUP_BUILDERS = {
+    "agents": lambda config, keymap: live_agent_actions(),
+    "actions": lambda config, keymap: build_actions(),
+    "custom": lambda config, keymap: custom_commands(config, keymap),
+    "plugins": lambda config, keymap: plugin_actions(),
+}
+DEFAULT_GROUP_ORDER = ["agents", "actions", "custom", "plugins"]
 
 
 def main() -> int:
@@ -944,29 +1096,48 @@ def main() -> int:
     prefetch("workspace", "list")
     prefetch("plugin", "action", "list", "--json")
     config = load_config()
-    global FZF_COLORS
+    pcfg = load_plugin_config()
+
+    # Apply resolved settings to module globals before anything renders.
+    global FZF_COLORS, MOD_SYMBOLS
     FZF_COLORS = fzf_theme(config)
-    keymap = Keymap(config)
+    apply_theme_colors(config)
+    apply_glyph_config(pcfg)
+    MOD_SYMBOLS = resolve_modifier_style(pcfg)
+
+    leader = pcfg.get("leader", "")
+    keymap = Keymap(config, leader=leader)
     ctx = load_context()
     trace("config + context")
 
-    # Agents first: the palette is most often opened to jump to one, and the
-    # group is the only one whose rows change minute to minute.
-    actions = (
-        live_agent_actions()
-        + build_actions()
-        + custom_commands(config, keymap)
-        + plugin_actions()
-    )
+    show_key_only = pcfg.get("show_key_only", True)
+    group_order = pcfg.get("group_order", DEFAULT_GROUP_ORDER)
+    if isinstance(group_order, str):
+        group_order = DEFAULT_GROUP_ORDER
+
+    actions: list[Action] = []
+    for group in group_order:
+        builder = GROUP_BUILDERS.get(group)
+        if builder:
+            actions.extend(builder(config, keymap))
+
+    if not show_key_only:
+        actions = [a for a in actions if not a.teach_only]
+
     index = {action.id: action for action in actions}
 
     trace("actions built")
     specs = row_specs(actions, keymap)
+    # Bake resolved colors into the cache so the --rows reload path uses them.
+    cache_data = {
+        "specs": specs,
+        "colors": {"key": KEY, "dim": DIM, "cat": CAT},
+    }
     rows = render_rows(specs)
     trace("rows rendered — handing off to fzf")
     # Group headings are selectable in fzf; treat picking one as "keep looking".
     while True:
-        chosen = run_fzf(rows, "", specs=specs)
+        chosen = run_fzf(rows, "", specs=cache_data)
         if not chosen:
             return 0
         if chosen != SEPARATOR:

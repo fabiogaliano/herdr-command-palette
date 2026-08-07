@@ -69,9 +69,55 @@ Total time from keypress to first paint is approximately 45 ms.
 
 ## Configuration
 
-No plugin-specific configuration is needed. The palette reads your existing `[keys]` and `[theme.custom]` sections from `config.toml`.
+The palette works without configuration. It reads your `[keys]` and `[theme.custom]` sections from `config.toml` automatically.
 
-If you set custom keybindings, the palette shows your bindings. If you do not, it shows Herdr's defaults.
+To customize the palette itself, create a `config.toml` in the plugin config directory. Herdr sets this path at runtime as `HERDR_PLUGIN_CONFIG_DIR`. Find it with:
+
+```sh
+herdr plugin list
+```
+
+All settings are optional. Defaults apply when a setting is absent.
+
+```toml
+# Glyph shown for the prefix key in shortcut hints.
+# Default: the rendered prefix chord (e.g. "^;" for ctrl+semicolon).
+# Set a glyph to use a fixed symbol instead.
+leader = "✦"
+
+# How modifier keys are displayed: "symbol" (^⌥⇧⌘) or "text" (Ctrl+Alt+Shift+Cmd).
+# Default: "symbol" on macOS, "text" on Linux.
+modifier_style = "symbol"
+
+# Show actions the palette cannot run (copy mode, resize mode, etc.).
+# These rows display the shortcut so you know which key to press.
+# Default: true.
+show_key_only = true
+
+# Order of groups in the palette. Omit a group to hide it.
+# Default: ["agents", "actions", "custom", "plugins"].
+group_order = ["agents", "actions", "custom", "plugins"]
+
+# Agent status glyphs. Override any or all.
+[glyphs]
+working = "●"
+done = "✓"
+idle = "◌"
+blocked = "▲"
+unknown = "·"
+```
+
+### Theme integration
+
+Row text colors (shortcut hints, group headings, dim text) are derived from your `[theme.custom]` section:
+
+| Theme token  | Used for           |
+|------------- |------------------- |
+| `accent`     | Shortcut hints     |
+| `overlay0`   | Group headings     |
+| `subtext0`   | Dim / secondary    |
+
+If no custom theme is set, the palette falls back to default terminal colors.
 
 ## Tracing
 
