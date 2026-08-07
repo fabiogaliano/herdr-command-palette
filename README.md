@@ -1,10 +1,10 @@
-# herdr-palette
+# herdr-command-palette
 
 A fuzzy command palette for [Herdr](https://herdr.dev).
 
 Press one key to open a popup. The popup lists every Herdr action. Each row shows the keyboard shortcut next to the action name. Select a row and press Enter to run it.
 
-![Command Palette screenshot](https://raw.githubusercontent.com/fabiogaliano/herdr-palette/main/screenshot.png)
+![Command Palette screenshot](https://raw.githubusercontent.com/fabiogaliano/herdr-command-palette/main/screenshot.png)
 
 ## What it does
 
@@ -28,7 +28,7 @@ Some Herdr actions are client-side terminal modes. The palette cannot run them f
 ## Install
 
 ```sh
-herdr plugin install fabiogaliano/herdr-palette
+herdr plugin install fabiogaliano/herdr-command-palette
 ```
 
 Then bind it in `~/.config/herdr/config.toml`:
@@ -50,8 +50,8 @@ herdr server reload-config
 ### Install from a local checkout
 
 ```sh
-git clone https://github.com/fabiogaliano/herdr-palette.git
-herdr plugin link ./herdr-palette
+git clone https://github.com/fabiogaliano/herdr-command-palette.git
+herdr plugin link ./herdr-command-palette
 ```
 
 ## How it works
