@@ -3,6 +3,16 @@
 # interpreter starts: -S skips site/sitecustomize processing (the palette is
 # pure stdlib) and -E ignores PYTHON* env, which together cut a chunk off the
 # ~115ms interpreter start that dominates time-to-first-paint.
+
+# Plugin panes inherit the server's environment, which can be a bare
+# /usr/bin:/bin:/usr/sbin:/sbin, and -f skips the rc files that would otherwise
+# put Homebrew on PATH. Without this the fzf check fails and the popup exits 1
+# the instant it opens. Kept to builtins so it costs no subprocess.
+for _d in /opt/homebrew/bin /usr/local/bin $HOME/.local/bin; do
+  [[ -d $_d ]] && PATH=$_d:$PATH
+done
+export PATH
+
 if [[ -n $HERDR_PALETTE_TRACE ]]; then
   zmodload zsh/datetime
   export HERDR_PALETTE_T0=$EPOCHREALTIME
