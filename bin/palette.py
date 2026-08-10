@@ -1091,13 +1091,41 @@ GROUP_BUILDERS = {
 DEFAULT_GROUP_ORDER = ["agents", "actions", "custom", "plugins"]
 
 
+def fatal(problem: str, remedy: str) -> int:
+    """A popup pane is torn down the moment this process exits, and stderr goes
+    with it, so returning 1 here reads as the palette flashing and vanishing
+    rather than as an error. Hold the frame until a keypress instead.
+    """
+    print(f"\n  {problem}\n\n  {remedy}\n")
+    print(f"  PATH={os.environ.get('PATH', '')}\n")
+    if sys.stdin.isatty():
+        print("  Press Enter to close.")
+        try:
+            input()
+        except (EOFError, KeyboardInterrupt):
+            pass
+    return 1
+
+
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "--rows":
         return emit_rows(sys.argv[2] if len(sys.argv) > 2 else "")
 
     if not which("fzf"):
-        print("herdr-palette requires fzf on PATH", file=sys.stderr)
-        return 1
+        return fatal(
+            "herdr-palette requires fzf on PATH.",
+            "Install fzf, or start the Herdr server from a login shell so it "
+            "inherits your PATH.",
+        )
+
+    # HERDR falls back to a bare "herdr" when PATH is too thin to resolve it,
+    # which would otherwise fail later as an empty palette rather than an error.
+    if not which(HERDR) and not os.access(HERDR, os.X_OK):
+        return fatal(
+            "herdr-palette cannot find the herdr binary.",
+            "Set HERDR_BIN_PATH to its full path, or start the Herdr server "
+            "from a login shell so it inherits your PATH.",
+        )
 
     trace("main entered")
     prefetch("agent", "list")
