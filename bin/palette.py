@@ -544,6 +544,7 @@ def run_fzf(
     rows: list[tuple[str, str]],
     header: str,
     specs: dict | list | None = None,
+    focus_id: str | None = None,
 ) -> str | None:
     payload = encode_rows(rows)
     swap: list[str] = []
@@ -564,13 +565,20 @@ def run_fzf(
         # -S -E for the same reason the trampoline uses them: this respawns the
         # interpreter on every keystroke, so its startup is the typing latency.
         script = f"{shlex.quote(sys.executable)} -S -E {shlex.quote(os.path.abspath(__file__))}"
+        # When the invoking pane is a live agent, pre-select its row so the
+        # palette opens on "you are here" rather than always the top.
+        initial_pos = 3
+        if focus_id:
+            for i, (rid, _) in enumerate(rows, 1):
+                if rid == focus_id:
+                    initial_pos = i
+                    break
         swap = [
             "--disabled",
             f"--bind=change:reload({script} --rows {{q}})",
-            # Every redraw opens with a blank line and a heading, so the first
-            # selectable action is the third row. `result` fires once the new
-            # list is ready, which is why this survives each reload.
-            "--bind=result:pos(3)",
+            # `result` fires once the new list is ready; on reload (typing) the
+            # position resets to the top so filtered results stay predictable.
+            f"--bind=result:pos({initial_pos})",
         ]
     proc = subprocess.run(
         [
@@ -1135,9 +1143,11 @@ def main() -> int:
     }
     rows = render_rows(specs)
     trace("rows rendered — handing off to fzf")
+    # Pre-select the row for the currently focused agent, if any.
+    active_agent = f"agent:{ctx.pane_id}" if ctx.pane_id else None
     # Group headings are selectable in fzf; treat picking one as "keep looking".
     while True:
-        chosen = run_fzf(rows, "", specs=cache_data)
+        chosen = run_fzf(rows, "", specs=cache_data, focus_id=active_agent)
         if not chosen:
             return 0
         if chosen != SEPARATOR:
