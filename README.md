@@ -95,8 +95,8 @@ modifier_style = "symbol"
 show_key_only = true
 
 # Order of groups in the palette. Omit a group to hide it.
-# Default: ["agents", "actions", "custom", "plugins"].
-group_order = ["agents", "actions", "custom", "plugins"]
+# Default: ["agents", "workspaces", "actions", "custom", "plugins"].
+group_order = ["agents", "workspaces", "actions", "custom", "plugins"]
 
 # Agent status glyphs. Override any or all.
 [glyphs]

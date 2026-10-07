@@ -16,10 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Modifier key style auto-detects the platform; configurable via `modifier_style`.
 - Group ordering configurable via `group_order`.
 - `show_key_only` option to hide teach-only actions.
+- Agent rows lead with the session title, and the title is searchable.
+- A `workspaces` group lists open workspaces for one-step switching.
 
 ### Fixed
 
 - Self-exclusion filter now matches on plugin id instead of command substring.
+- Typing no longer leaves the cursor on the caller's old row index; it lands on the first match.
+- Up/down skip group headings and blank spacer rows.
+- Fuzzy subsequence matching only applies when no row contains the query outright.
 
 ## [0.1.0]
 

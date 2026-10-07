@@ -573,12 +573,23 @@ def run_fzf(
                 if rid == focus_id:
                     initial_pos = i
                     break
+        # Every group opens with a blank row and a heading, so one step can
+        # land on at most two separators; a third check on the way up steps
+        # back down when the first group's heading sits at the very top.
+        def on_sep(then: str) -> str:
+            return f"+transform([ {{1}} = {SEPARATOR} ] && echo {then} || true)"
+
+        down = "down" + on_sep("down") * 2
+        up = "up" + on_sep("up") * 2 + on_sep("down+down")
         swap = [
             "--disabled",
             f"--bind=change:reload({script} --rows {{q}})",
-            # `result` fires once the new list is ready; on reload (typing) the
-            # position resets to the top so filtered results stay predictable.
-            f"--bind=result:pos({initial_pos})",
+            # `result` fires after every reload. Only the unfiltered list opens
+            # on the caller's agent row: once the user types, its old index
+            # points at an unrelated row, so focus the first match instead.
+            f"--bind=result:transform:[ -z {{q}} ] && echo 'pos({initial_pos})' || echo 'pos(3)'",
+            f"--bind=down,ctrl-j,ctrl-n:{down}",
+            f"--bind=up,ctrl-k,ctrl-p:{up}",
         ]
     proc = subprocess.run(
         [
@@ -841,8 +852,8 @@ def tilde(path: str) -> str:
     return f"~{path[len(home):]}" if path.startswith(home + os.sep) else path
 
 
-def agent_entries() -> list[tuple[str, str, str, str, str]]:
-    """Live agents as (pane_id, workspace number, label, cwd, status)."""
+def agent_entries() -> list[tuple[str, str, str, str, str, str]]:
+    """Live agents as (pane_id, workspace number, label, cwd, status, title)."""
     # agent list reports workspace_id only; the human-readable number and label
     # live on the workspace record.
     workspaces = {
@@ -863,10 +874,11 @@ def agent_entries() -> list[tuple[str, str, str, str, str]]:
                 ws.get("label") or workspace_id,
                 tilde(agent.get("foreground_cwd") or agent.get("cwd", "")),
                 agent.get("agent_status") or "unknown",
+                agent.get("terminal_title_stripped") or "",
             )
         )
 
-    def rank(entry: tuple[str, str, str, str, str]) -> tuple:
+    def rank(entry: tuple[str, str, str, str, str, str]) -> tuple:
         number = entry[1]
         # Workspace order within a status, so a row doesn't move unless its
         # status actually changed.
@@ -883,15 +895,16 @@ def focus_agent(ctx: Context) -> None:
     entries = agent_entries()
     number_w = max((len(e[1]) for e in entries), default=0)
     label_w = max((len(e[2]) for e in entries), default=0)
+    title_w = max((len(e[5]) for e in entries), default=0)
     cwd_w = max((len(e[3]) for e in entries), default=0)
 
     rows = []
-    for pane_id, number, label, cwd, status in entries:
+    for pane_id, number, label, cwd, status, title in entries:
         glyph, colour = AGENT_STATUS.get(status, AGENT_STATUS_UNKNOWN)
         rows.append(
             (
                 pane_id,
-                f"{number:<{number_w}}  {label:<{label_w}}  "
+                f"{number:<{number_w}}  {label:<{label_w}}  {title:<{title_w}}  "
                 f"{DIM}{cwd:<{cwd_w}}{RESET}  {colour}{glyph} {status}{RESET}",
             )
         )
@@ -907,22 +920,57 @@ def live_agent_actions() -> list[Action]:
     """One row per live agent, so focusing one is a single pick, not two."""
     entries = agent_entries()
     number_w = max((len(e[1]) for e in entries), default=0)
-    label_w = max((len(e[2]) for e in entries), default=0)
+    # Leaves room for the glyph and number inside the palette's title column,
+    # which render_rows caps; past it the status column would be shoved right.
+    title_room = 44 - number_w - 4
     rows = []
-    for pane_id, number, label, cwd, status in entries:
+    for pane_id, number, label, cwd, status, title in entries:
         glyph, colour = AGENT_STATUS.get(status, AGENT_STATUS_UNKNOWN)
+        # The session title leads because it is what tells agents in one
+        # workspace apart; the workspace label moves to the note and still
+        # matches.
+        name = title or label
+        if len(name) > title_room:
+            name = name[: title_room - 1] + "…"
         rows.append(
             Action(
                 id=f"agent:{pane_id}",
                 # Padded here rather than by render_rows: the title column is
                 # sized across every action, and these two sub-columns should
                 # line up with each other, not with "Split pane right".
-                title=f"{glyph} {number:<{number_w}}  {label:<{label_w}}",
+                title=f"{glyph} {number:<{number_w}}  {name}",
                 category="agents",
                 run=(lambda p: lambda c: herdr("agent", "focus", p))(pane_id),
                 chord=status,
                 chord_color=colour,
-                note=f"{DIM}{cwd}{RESET}",
+                note=f"{DIM}{label}  {cwd}{RESET}" if title else f"{DIM}{cwd}{RESET}",
+                raw_title=True,
+            )
+        )
+    return rows
+
+
+def workspace_actions() -> list[Action]:
+    """One row per open workspace, so switching skips the nested picker."""
+    workspaces = herdr_quiet("workspace", "list").get("workspaces", [])
+    workspaces.sort(key=lambda ws: ws.get("number", 1 << 30))
+    number_w = max((len(str(ws.get("number", ""))) for ws in workspaces), default=0)
+    rows = []
+    for ws in workspaces:
+        status = ws.get("agent_status") or ""
+        glyph, colour = AGENT_STATUS.get(status, AGENT_STATUS_UNKNOWN)
+        tabs, panes = ws.get("tab_count", 0), ws.get("pane_count", 0)
+        rows.append(
+            Action(
+                id=f"workspace:{ws['workspace_id']}",
+                title=f"{glyph} {ws.get('number', ''):<{number_w}}  "
+                f"{ws.get('label') or ws['workspace_id']}",
+                category="workspaces",
+                run=(lambda w: lambda c: herdr("workspace", "focus", w))(ws["workspace_id"]),
+                chord=status,
+                chord_color=colour,
+                note=f"{DIM}{tabs} tab{'s' * (tabs != 1)} · "
+                f"{panes} pane{'s' * (panes != 1)}{RESET}",
                 raw_title=True,
             )
         )
@@ -1022,12 +1070,14 @@ def strip_ansi(text: str) -> str:
     return ANSI_RE.sub("", text)
 
 
-def matches(query: str, haystack: str) -> bool:
+def matches(query: str, haystack: str, loose: bool = True) -> bool:
     """Substring per term, falling back to subsequence, AND across terms."""
     haystack = haystack.lower()
     for term in query.lower().split():
         if term in haystack:
             continue
+        if not loose:
+            return False
         chars = iter(haystack)
         if not all(char in chars for char in term):
             return False
@@ -1041,9 +1091,15 @@ def render_rows(specs: list[dict], query: str = "") -> list[tuple[str, str]]:
     key_w = 16
     rows: list[tuple[str, str]] = []
     group = None
-    for spec in specs:
-        haystack = f"{spec['cat']} {spec['title']} {spec['keys']} {strip_ansi(spec.get('note', ''))}"
-        if query and not matches(query, haystack):
+    haystacks = [
+        f"{spec['cat']} {spec['title']} {spec['keys']} {strip_ansi(spec.get('note', ''))}"
+        for spec in specs
+    ]
+    # Subsequence matching over long agent titles and paths hits almost
+    # anything, so it only kicks in when no row contains the query outright.
+    loose = not any(matches(query, h, loose=False) for h in haystacks)
+    for spec, haystack in zip(specs, haystacks):
+        if query and not matches(query, haystack, loose):
             continue
         if spec["cat"] != group:
             rows.append((SEPARATOR, ""))
@@ -1084,11 +1140,12 @@ def emit_rows(query: str) -> int:
 
 GROUP_BUILDERS = {
     "agents": lambda config, keymap: live_agent_actions(),
+    "workspaces": lambda config, keymap: workspace_actions(),
     "actions": lambda config, keymap: build_actions(),
     "custom": lambda config, keymap: custom_commands(config, keymap),
     "plugins": lambda config, keymap: plugin_actions(),
 }
-DEFAULT_GROUP_ORDER = ["agents", "actions", "custom", "plugins"]
+DEFAULT_GROUP_ORDER = ["agents", "workspaces", "actions", "custom", "plugins"]
 
 
 def fatal(problem: str, remedy: str) -> int:
