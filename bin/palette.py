@@ -694,9 +694,9 @@ def build_actions() -> list[Action]:
         # Panes
         # --focus follows the split: you asked for a new pane, so you want to be in it.
         A("split_right", "Split pane right", "pane", "split_vertical",
-          lambda c: herdr("pane", "split", "--current", "--direction", "right", "--focus")),
+          lambda c: herdr("pane", "split", "--pane", need(c.pane_id, "pane"), "--direction", "right", "--focus")),
         A("split_down", "Split pane down", "pane", "split_horizontal",
-          lambda c: herdr("pane", "split", "--current", "--direction", "down", "--focus")),
+          lambda c: herdr("pane", "split", "--pane", need(c.pane_id, "pane"), "--direction", "down", "--focus")),
         A("zoom", "Toggle pane zoom", "pane", "zoom",
           lambda c: herdr("pane", "zoom", "--pane", need(c.pane_id, "pane"))),
         A("close_pane", "Close pane", "pane", "close_pane",
@@ -704,12 +704,12 @@ def build_actions() -> list[Action]:
         A("rename_pane", "Rename pane…", "pane", "rename_pane", rename_pane),
         *[
             A(f"focus_pane_{d}", f"Focus pane {d}", "pane", f"focus_pane_{d}",
-              (lambda d: lambda c: herdr("pane", "focus", "--current", "--direction", d))(d))
+              (lambda d: lambda c: herdr("pane", "focus", "--pane", need(c.pane_id, "pane"), "--direction", d))(d))
             for d in ("left", "down", "up", "right")
         ],
         *[
             A(f"swap_pane_{d}", f"Swap pane {d}", "pane", f"swap_pane_{d}",
-              (lambda d: lambda c: herdr("pane", "swap", "--current", "--direction", d))(d))
+              (lambda d: lambda c: herdr("pane", "swap", "--pane", need(c.pane_id, "pane"), "--direction", d))(d))
             for d in ("left", "down", "up", "right")
         ],
         A("copy_mode", "Copy mode", "pane", "copy_mode"),
