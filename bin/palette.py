@@ -853,12 +853,19 @@ def tilde(path: str) -> str:
 
 
 def agent_entries() -> list[tuple[str, str, str, str, str, str]]:
-    """Live agents as (pane_id, workspace number, label, cwd, status, title)."""
+    """Live agents as (pane_id, workspace number, label, cwd, status, title).
+
+    title is the tab label, or the session title when the tab is unnamed.
+    """
     # agent list reports workspace_id only; the human-readable number and label
     # live on the workspace record.
     workspaces = {
         ws["workspace_id"]: ws
         for ws in herdr_quiet("workspace", "list").get("workspaces", [])
+    }
+    tabs = {
+        tab["tab_id"]: tab.get("label", "")
+        for tab in herdr_quiet("tab", "list").get("tabs", [])
     }
     entries = []
     for agent in herdr_quiet("agent", "list").get("agents", []):
@@ -867,6 +874,11 @@ def agent_entries() -> list[tuple[str, str, str, str, str, str]]:
             continue
         workspace_id = agent.get("workspace_id", "")
         ws = workspaces.get(workspace_id, {})
+        # ponytail: an all-digit label is herdr's default for an unnamed tab,
+        # so the session title says more there.
+        tab_label = tabs.get(agent.get("tab_id"), "")
+        if tab_label.isdigit():
+            tab_label = ""
         entries.append(
             (
                 pane_id,
@@ -874,7 +886,7 @@ def agent_entries() -> list[tuple[str, str, str, str, str, str]]:
                 ws.get("label") or workspace_id,
                 tilde(agent.get("foreground_cwd") or agent.get("cwd", "")),
                 agent.get("agent_status") or "unknown",
-                agent.get("terminal_title_stripped") or "",
+                tab_label or agent.get("terminal_title_stripped") or "",
             )
         )
 
@@ -926,8 +938,8 @@ def live_agent_actions() -> list[Action]:
     rows = []
     for pane_id, number, label, cwd, status, title in entries:
         glyph, colour = AGENT_STATUS.get(status, AGENT_STATUS_UNKNOWN)
-        # The session title leads because it is what tells agents in one
-        # workspace apart; the workspace label moves to the note and still
+        # The tab (or session) title leads because it is what tells agents in
+        # one workspace apart; the workspace label moves to the note and still
         # matches.
         name = title or label
         if len(name) > title_room:
