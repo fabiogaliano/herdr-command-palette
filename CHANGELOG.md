@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `show_key_only` option to hide teach-only actions.
 - Agent rows lead with the session title, and the title is searchable.
 - A `workspaces` group lists open workspaces for one-step switching.
+- Native Windows support via a `palette-win` pane: fzf binds run through `cmd.exe`, Python starts through uv.
 
 ### Fixed
 

@@ -21,9 +21,9 @@ Some Herdr actions are client-side terminal modes. The palette cannot run them f
 
 ## Requirements
 
-- Herdr 0.7.5 or later
+- Herdr 0.7.5 or later (0.9.0 or later on Windows)
 - `fzf` on `PATH`
-- Python 3.9 or later
+- Python 3.9 or later; on Windows, [uv](https://docs.astral.sh/uv/) on `PATH`
 
 ## Install
 
@@ -46,6 +46,27 @@ Reload the config:
 ```sh
 herdr server reload-config
 ```
+
+### Windows
+
+Needs Herdr 0.9.0 or later, plus [uv](https://docs.astral.sh/uv/) and `fzf` on
+`PATH`. uv launches the palette because the `python` on a default Windows `PATH`
+is often the Microsoft Store stub; if uv has no Python yet, the first open
+downloads one. The Windows pane has its own id, so bind
+`--entrypoint palette-win` instead. The config lives in
+`%APPDATA%\herdr\config.toml`:
+
+```toml
+[[keys.command]]
+key = "prefix+space"
+type = "shell"
+command = "herdr plugin pane open --plugin palette --entrypoint palette-win"
+description = "Command palette"
+```
+
+Custom `type = "shell"` commands picked from the palette run through `cmd.exe`
+on Windows. A command written for another shell may work from its own
+keybinding but not from the palette.
 
 ### Install from a local checkout
 
@@ -86,7 +107,7 @@ All settings are optional. Defaults apply when a setting is absent.
 leader = "✦"
 
 # How modifier keys are displayed: "symbol" (^⌥⇧⌘) or "text" (Ctrl+Alt+Shift+Cmd).
-# Default: "symbol" on macOS, "text" on Linux.
+# Default: "symbol" on macOS, "text" on Linux and Windows.
 modifier_style = "symbol"
 
 # Show actions the palette cannot run (copy mode, resize mode, etc.).

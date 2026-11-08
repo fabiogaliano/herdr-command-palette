@@ -3,12 +3,25 @@ name = "Command Palette"
 version = "0.2.0"
 min_herdr_version = "0.7.5"
 description = "Fuzzy palette over every Herdr action, showing the shortcut beside each one."
-platforms = ["macos", "linux"]
+platforms = ["macos", "linux", "windows"]
 
 [[panes]]
 id = "palette"
 title = "Command Palette"
+platforms = ["macos", "linux"]
 command = ["./bin/herdr-palette"]
+placement = "popup"
+width = "70%"
+height = "60%"
+
+# Windows can't run the zsh trampoline, and pane ids must be unique across
+# platforms. uv finds a Python; -X utf8 lets the rows' glyphs through the
+# console encoding; -S -E skip startup work, as the trampoline does.
+[[panes]]
+id = "palette-win"
+title = "Command Palette"
+platforms = ["windows"]
+command = ["uv", "run", "--no-project", "--", "python", "-X", "utf8", "-S", "-E", "bin/palette.py"]
 placement = "popup"
 width = "70%"
 height = "60%"
